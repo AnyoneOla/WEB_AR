@@ -42,6 +42,7 @@
 			align-items: center;
 			z-index: 10;
 			backdrop-filter: blur(10px);
+			padding-bottom: env(safe-area-inset-bottom);
 		}
 
 		.object-btn {
@@ -52,11 +53,16 @@
 			padding: 6px;
 			cursor: pointer;
 			transition: all 0.2s ease;
-			width: 60px;
-			height: 60px;
+			width: 75px; /* Wider button to accommodate preview */
+			height: 90px;
 			display: flex;
+			flex-direction: column;
 			align-items: center;
 			justify-content: center;
+			position: relative;
+			color: white;
+			font-size: 10px;
+			text-align: center;
 		}
 
 		.object-btn:hover,
@@ -66,11 +72,20 @@
 			background: #2b2b2b;
 		}
 
-		.object-btn img {
-			max-width: 100%;
-			max-height: 100%;
+		.object-btn .preview-img {
+			width: 60px;
+			height: 60px;
+			background: #333;
+			border-radius: 8px;
 			object-fit: contain;
-			border-radius: 5px;
+			margin-bottom: 5px;
+			border: 1px solid #444;
+		}
+		
+		.object-btn .object-name {
+			font-size: 10px;
+			margin-top: 5px;
+			white-space: nowrap;
 		}
 
 		#loader {
@@ -88,7 +103,6 @@
 		}
 	</style>
 
-	<!-- Use CDN imports -->
 	<script type="importmap">
 		{
 			"imports": {
@@ -103,14 +117,33 @@
 	<div id="header">Pro AR Studio</div>
 
 	<div id="object-bar">
-		<!-- Primitive Buttons -->
-		<button class="object-btn selected" data-object="cone"><img src="https://img.icons8.com/ios-filled/50/cone.png" alt="Cone" /></button>
-		<button class="object-btn" data-object="cube"><img src="https://img.icons8.com/ios-filled/50/cube.png" alt="Cube" /></button>
-		<button class="object-btn" data-object="sphere"><img src="https://img.icons8.com/ios-filled/50/sphere.png" alt="Sphere" /></button>
+		<button class="object-btn selected" data-object="cone">
+			<img class="preview-img" src="
 
-		<!-- Model Buttons -->
-		<button class="object-btn" data-object="model1"><img src="https://img.icons8.com/ios/50/vr.png" alt="Model 1" /></button>
-		<button class="object-btn" data-object="model2"><img src="https://img.icons8.com/ios/50/3d-rotate.png" alt="Model 2" /></button>
+http://googleusercontent.com/image_collection/image_retrieval/3623831216886132193_0
+" alt="Cone" />
+			<span class="object-name">Cone</span>
+		</button>
+		<button class="object-btn" data-object="cube">
+			<img class="preview-img" src="
+
+http://googleusercontent.com/image_collection/image_retrieval/15994511292850026381_0
+" alt="Cube" />
+			<span class="object-name">Cube</span>
+		</button>
+		<button class="object-btn" data-object="sphere">
+			<img class="preview-img" src="https://img.icons8.com/ios-filled/50/sphere.png" alt="Sphere" />
+			<span class="object-name">Sphere</span>
+		</button>
+
+		<button class="object-btn" data-object="couple-musical-box">
+			<img class="preview-img" src="https://img.icons8.com/plasticine/100/3d-printer.png" alt="Musical Box" />
+			<span class="object-name">Musical Box</span>
+		</button>
+		<button class="object-btn" data-object="robot">
+			<img class="preview-img" src="http://googleusercontent.com/image_collection/image_retrieval/6196946999967431273_0" alt="Robot" />
+			<span class="object-name">Robot</span>
+		</button>
 	</div>
 
 	<div id="loader">Loading model...</div>
@@ -120,8 +153,9 @@
 		import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 		import { ARButton } from 'three/addons/webxr/ARButton.js';
 
-		let camera, scene, renderer, controller;
+		let camera, scene, renderer, controller, raycaster;
 		let selectedObject = 'cone';
+		let draggedObject = null;
 		const loader = new GLTFLoader();
 
 		const objectButtons = document.querySelectorAll('.object-btn');
@@ -139,6 +173,11 @@
 			const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 2);
 			light.position.set(0.5, 1, 0.25);
 			scene.add(light);
+			
+			// Add a directional light for better model shading
+			const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+			directionalLight.position.set(1, 1, 1);
+			scene.add(directionalLight);
 
 			renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 			renderer.setPixelRatio(window.devicePixelRatio);
@@ -147,10 +186,13 @@
 			renderer.setAnimationLoop(animate);
 			container.appendChild(renderer.domElement);
 
-			document.body.appendChild(ARButton.createButton(renderer));
+			document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
 
+			raycaster = new THREE.Raycaster();
+			
 			controller = renderer.xr.getController(0);
-			controller.addEventListener('select', onSelect);
+			controller.addEventListener('selectstart', onSelectStart);
+			controller.addEventListener('selectend', onSelectEnd);
 			scene.add(controller);
 
 			window.addEventListener('resize', onWindowResize);
@@ -168,7 +210,7 @@
 		function createPrimitiveGeometry(type) {
 			switch (type) {
 				case 'cone':
-					return new THREE.CylinderGeometry(0, 0.05, 0.2, 32).rotateX(Math.PI / 2);
+					return new THREE.CylinderGeometry(0, 0.05, 0.2, 32);
 				case 'cube':
 					return new THREE.BoxGeometry(0.1, 0.1, 0.1);
 				case 'sphere':
@@ -182,39 +224,63 @@
 			loaderUI.style.display = show ? 'block' : 'none';
 		}
 
-		function onSelect() {
-			const primitive = createPrimitiveGeometry(selectedObject);
-			if (primitive) {
-				const material = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff });
-				const mesh = new THREE.Mesh(primitive, material);
-				mesh.position.set(0, 0, -0.3).applyMatrix4(controller.matrixWorld);
-				mesh.quaternion.setFromRotationMatrix(controller.matrixWorld);
-				scene.add(mesh);
-				return;
+		function onSelectStart() {
+			const intersects = raycaster.intersectObjects(scene.children);
+			if (intersects.length > 0) {
+				const target = intersects[0].object;
+				// Find the top-level parent if it's a sub-mesh of a GLTF model
+				draggedObject = target;
+				while (draggedObject.parent && draggedObject.parent !== scene) {
+					draggedObject = draggedObject.parent;
+				}
+				
+				// Remove the object from the scene and add it to the controller
+				scene.remove(draggedObject);
+				controller.add(draggedObject);
+			} else {
+				// No object was hit, so create a new one
+				const primitive = createPrimitiveGeometry(selectedObject);
+				if (primitive) {
+					const material = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff });
+					const mesh = new THREE.Mesh(primitive, material);
+					mesh.position.set(0, 0, -0.3); // Relative to the controller
+					controller.add(mesh);
+					draggedObject = mesh;
+					return;
+				}
+
+				// Load GLTF model
+				let modelUrl = null;
+				if (selectedObject === 'couple-musical-box') {
+					// This is a free model from Sketchfab
+					modelUrl = 'https://cdn.glitch.global/05d6b412-f046-4c46-953e-2b581c3c3996/couple_musical_box.glb?v=1679901416462';
+				} else if (selectedObject === 'robot') {
+					modelUrl = 'https://modelviewer.dev/shared-assets/models/RobotExpressive.glb';
+				}
+
+				if (modelUrl) {
+					showLoader(true);
+					loader.load(modelUrl, (gltf) => {
+						const model = gltf.scene;
+						model.scale.set(0.1, 0.1, 0.1); // Adjust scale as needed
+						model.position.set(0, 0, -0.3);
+						controller.add(model);
+						draggedObject = model;
+						showLoader(false);
+					}, undefined, (error) => {
+						console.error('Error loading model:', error);
+						showLoader(false);
+					});
+				}
 			}
+		}
 
-			// Load GLTF model
-			let modelUrl = null;
-
-			if (selectedObject === 'model1') {
-				modelUrl = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb'; // Replace with your model
-			} else if (selectedObject === 'model2') {
-				modelUrl = 'https://modelviewer.dev/shared-assets/models/RobotExpressive.glb'; // Replace with your model
-			}
-
-			if (modelUrl) {
-				showLoader(true);
-				loader.load(modelUrl, (gltf) => {
-					const model = gltf.scene;
-					model.position.set(0, 0, -0.3).applyMatrix4(controller.matrixWorld);
-					model.quaternion.setFromRotationMatrix(controller.matrixWorld);
-					model.scale.set(0.2, 0.2, 0.2);
-					scene.add(model);
-					showLoader(false);
-				}, undefined, (error) => {
-					console.error('Error loading model:', error);
-					showLoader(false);
-				});
+		function onSelectEnd() {
+			if (draggedObject) {
+				// Detach the object from the controller and add it back to the scene
+				controller.remove(draggedObject);
+				scene.add(draggedObject);
+				draggedObject = null;
 			}
 		}
 
@@ -225,6 +291,10 @@
 		}
 
 		function animate() {
+			if (renderer.xr.isPresenting) {
+				// Update raycaster for picking
+				raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+			}
 			renderer.render(scene, camera);
 		}
 	</script>

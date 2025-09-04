@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>AR Object Picker | Pro AR Studio</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<style>
+		body {
+			margin: 0;
+			overflow: hidden;
+			font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			background-color: #000;
+		}
+
+		/* Branding / Header */
+		#header {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			padding: 15px 20px;
+			background: rgba(0, 0, 0, 0.6);
+			color: white;
+			font-size: 20px;
+			font-weight: 600;
+			z-index: 10;
+			box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+			backdrop-filter: blur(10px);
+		}
+
+		#object-bar {
+			position: fixed;
+			bottom: 0;
+			left: 0;
+			width: 100%;
+			display: flex;
+			overflow-x: auto;
+			padding: 10px;
+			background: rgba(0, 0, 0, 0.6);
+			gap: 12px;
+			justify-content: center;
+			align-items: center;
+			z-index: 10;
+			backdrop-filter: blur(10px);
+		}
+
+		.object-btn {
+			flex: 0 0 auto;
+			background: #1e1e1e;
+			border: 2px solid transparent;
+			border-radius: 10px;
+			padding: 6px;
+			cursor: pointer;
+			transition: all 0.2s ease;
+			width: 60px;
+			height: 60px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+
+		.object-btn:hover,
+		.object-btn.selected {
+			border-color: #00bfff;
+			transform: scale(1.05);
+			background: #2b2b2b;
+		}
+
+		.object-btn img {
+			max-width: 100%;
+			max-height: 100%;
+			object-fit: contain;
+			border-radius: 5px;
+		}
+
+		#loader {
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			color: white;
+			font-size: 18px;
+			background: rgba(0,0,0,0.8);
+			padding: 20px 30px;
+			border-radius: 8px;
+			z-index: 20;
+			display: none;
+		}
+	</style>
+
+	<!-- Use CDN imports -->
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "https://unpkg.com/three@0.155.0/build/three.module.js",
+				"three/addons/": "https://unpkg.com/three@0.155.0/examples/jsm/"
+			}
+		}
+	</script>
+</head>
+<body>
+
+	<div id="header">Pro AR Studio</div>
+
+	<div id="object-bar">
+		<!-- Primitive Buttons -->
+		<button class="object-btn selected" data-object="cone"><img src="https://img.icons8.com/ios-filled/50/cone.png" alt="Cone" /></button>
+		<button class="object-btn" data-object="cube"><img src="https://img.icons8.com/ios-filled/50/cube.png" alt="Cube" /></button>
+		<button class="object-btn" data-object="sphere"><img src="https://img.icons8.com/ios-filled/50/sphere.png" alt="Sphere" /></button>
+
+		<!-- Model Buttons -->
+		<button class="object-btn" data-object="model1"><img src="https://img.icons8.com/ios/50/vr.png" alt="Model 1" /></button>
+		<button class="object-btn" data-object="model2"><img src="https://img.icons8.com/ios/50/3d-rotate.png" alt="Model 2" /></button>
+	</div>
+
+	<div id="loader">Loading model...</div>
+
+	<script type="module">
+		import * as THREE from 'three';
+		import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+		import { ARButton } from 'three/addons/webxr/ARButton.js';
+
+		let camera, scene, renderer, controller;
+		let selectedObject = 'cone';
+		const loader = new GLTFLoader();
+
+		const objectButtons = document.querySelectorAll('.object-btn');
+		const loaderUI = document.getElementById('loader');
+
+		init();
+
+		function init() {
+			const container = document.createElement('div');
+			document.body.appendChild(container);
+
+			scene = new THREE.Scene();
+			camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+			const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 2);
+			light.position.set(0.5, 1, 0.25);
+			scene.add(light);
+
+			renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.xr.enabled = true;
+			renderer.setAnimationLoop(animate);
+			container.appendChild(renderer.domElement);
+
+			document.body.appendChild(ARButton.createButton(renderer));
+
+			controller = renderer.xr.getController(0);
+			controller.addEventListener('select', onSelect);
+			scene.add(controller);
+
+			window.addEventListener('resize', onWindowResize);
+
+			// Button interaction
+			objectButtons.forEach(btn => {
+				btn.addEventListener('click', () => {
+					objectButtons.forEach(b => b.classList.remove('selected'));
+					btn.classList.add('selected');
+					selectedObject = btn.dataset.object;
+				});
+			});
+		}
+
+		function createPrimitiveGeometry(type) {
+			switch (type) {
+				case 'cone':
+					return new THREE.CylinderGeometry(0, 0.05, 0.2, 32).rotateX(Math.PI / 2);
+				case 'cube':
+					return new THREE.BoxGeometry(0.1, 0.1, 0.1);
+				case 'sphere':
+					return new THREE.SphereGeometry(0.07, 32, 32);
+				default:
+					return null;
+			}
+		}
+
+		function showLoader(show) {
+			loaderUI.style.display = show ? 'block' : 'none';
+		}
+
+		function onSelect() {
+			const primitive = createPrimitiveGeometry(selectedObject);
+			if (primitive) {
+				const material = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff });
+				const mesh = new THREE.Mesh(primitive, material);
+				mesh.position.set(0, 0, -0.3).applyMatrix4(controller.matrixWorld);
+				mesh.quaternion.setFromRotationMatrix(controller.matrixWorld);
+				scene.add(mesh);
+				return;
+			}
+
+			// Load GLTF model
+			let modelUrl = null;
+
+			if (selectedObject === 'model1') {
+				modelUrl = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb'; // Replace with your model
+			} else if (selectedObject === 'model2') {
+				modelUrl = 'https://modelviewer.dev/shared-assets/models/RobotExpressive.glb'; // Replace with your model
+			}
+
+			if (modelUrl) {
+				showLoader(true);
+				loader.load(modelUrl, (gltf) => {
+					const model = gltf.scene;
+					model.position.set(0, 0, -0.3).applyMatrix4(controller.matrixWorld);
+					model.quaternion.setFromRotationMatrix(controller.matrixWorld);
+					model.scale.set(0.2, 0.2, 0.2);
+					scene.add(model);
+					showLoader(false);
+				}, undefined, (error) => {
+					console.error('Error loading model:', error);
+					showLoader(false);
+				});
+			}
+		}
+
+		function onWindowResize() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+		}
+
+		function animate() {
+			renderer.render(scene, camera);
+		}
+	</script>
+
+</body>
+</html>

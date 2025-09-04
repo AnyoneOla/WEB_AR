@@ -188,7 +188,11 @@
 				const material = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff });
 				const mesh = new THREE.Mesh(primitive, material);
 				mesh.position.set(0, 0, -0.3).applyMatrix4(controller.matrixWorld);
-				mesh.quaternion.setFromRotationMatrix(controller.matrixWorld);
+
+				// Optional: Face the same Y-rotation as the controller, keep upright
+				const euler = new THREE.Euler(0, controller.rotation.y, 0, 'YXZ');
+				mesh.quaternion.setFromEuler(euler);
+
 				scene.add(mesh);
 				return;
 			}
@@ -197,9 +201,9 @@
 			let modelUrl = null;
 
 			if (selectedObject === 'model1') {
-				modelUrl = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb'; // Replace with your model
+				modelUrl = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb';
 			} else if (selectedObject === 'model2') {
-				modelUrl = 'rose.glb'; // Replace with your model
+				modelUrl = 'rose.glb';
 			}
 
 			if (modelUrl) {
@@ -207,7 +211,11 @@
 				loader.load(modelUrl, (gltf) => {
 					const model = gltf.scene;
 					model.position.set(0, 0, -0.3).applyMatrix4(controller.matrixWorld);
-					model.quaternion.setFromRotationMatrix(controller.matrixWorld);
+
+					// Keep upright by zeroing out X/Z rotation
+					const euler = new THREE.Euler(0, controller.rotation.y, 0, 'YXZ');
+					model.quaternion.setFromEuler(euler);
+
 					model.scale.set(0.2, 0.2, 0.2);
 					scene.add(model);
 					showLoader(false);
@@ -217,7 +225,6 @@
 				});
 			}
 		}
-
 		function onWindowResize() {
 			camera.aspect = window.innerWidth / window.innerHeight;
 			camera.updateProjectionMatrix();
